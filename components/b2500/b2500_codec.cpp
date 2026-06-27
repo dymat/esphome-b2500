@@ -159,11 +159,13 @@ bool B2500Codec::parse_wifi_info(uint8_t *data, uint16_t data_len, WifiInfoPacke
     ESP_LOGW(TAG, "Not a CMD_WIFI_INFO packet");
     return false;
   }
-  if (data_len < sizeof(B2500PacketHeader) + 2) {
-    ESP_LOGW(TAG, "Packet too short for CMD_WIFI_INFO, expected at least %d, got %d", sizeof(B2500PacketHeader) + 2,
-             data_len);
-    ESP_LOGW(TAG, "data: %s", format_hex_pretty(data, data_len).c_str());
-    return false;
+  // Newer firmware answers CMD_WIFI_INFO with the header only (no signal/SSID).
+  // Treat that as an empty, valid response instead of a parse failure.
+  if (data_len < sizeof(B2500PacketHeader) + 1) {
+    ESP_LOGD(TAG, "WiFi info packet has no payload (newer firmware), treating as empty");
+    payload.signal = 0;
+    payload.ssid = "";
+    return true;
   }
 
   // Extract the signal strength
