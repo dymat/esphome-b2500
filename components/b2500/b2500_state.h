@@ -79,6 +79,7 @@ class B2500State {
   WifiInfoPacket wifi_info_;
   FC41DInfoPacket fc41d_info_;
   TimerInfoPacket timer_info_;
+  uint8_t detected_timer_count_ = 0;  // 0 = unknown until the first timer packet is parsed
 
   time_t last_message_received_timestamp_ = 0;
 

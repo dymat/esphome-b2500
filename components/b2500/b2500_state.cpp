@@ -70,6 +70,11 @@ bool B2500State::set_dod(int dod, std::vector<uint8_t> &payload) {
 }
 
 uint8_t B2500State::get_number_of_timers() const {
+  // Prefer the count detected from the actual timer response packet; some devices
+  // report dev_version < 218 yet still support (and execute) 5 timers.
+  if (this->detected_timer_count_ != 0) {
+    return this->detected_timer_count_;
+  }
   if (this->runtime_info_.dev_version < 218) {
     return 3;
   }
@@ -175,14 +180,16 @@ bool B2500State::set_timer(int timer, bool enabled, float output_power, uint8_t 
 }
 
 bool B2500State::encode_timers(std::vector<uint8_t> &payload) {
-  if (this->is_message_received(B2500_MSG_RUNTIME_INFO) && this->runtime_info_.dev_version < 218) {
-    return this->codec_->encode_timers(this->timer_info_.base.timer, 3, payload);
-  } else {
+  // Write back the same number of timers the device reported (see get_number_of_timers).
+  // This ensures timer 4/5 changes are actually transmitted on 5-timer devices instead
+  // of being silently dropped because of a misleadingly low dev_version.
+  if (this->get_number_of_timers() >= 5) {
     TimerInfo timer[5];
     std::memcpy(timer, this->timer_info_.base.timer, sizeof(TimerInfo) * 3);
     std::memcpy(timer + 3, this->timer_info_.additional_timers, sizeof(TimerInfo) * 2);
     return this->codec_->encode_timers(timer, 5, payload);
   }
+  return this->codec_->encode_timers(this->timer_info_.base.timer, 3, payload);
 }
 
 bool B2500State::set_adaptive_mode_enabled(bool enabled, std::vector<uint8_t> &payload) {
@@ -302,6 +309,10 @@ bool B2500State::receive_packet(uint8_t *data, uint16_t data_len, time_t timesta
         ESP_LOGW(TAG, "Failed to parse timer info");
         return false;
       }
+      // Detect how many timers this device actually has from the response size.
+      // Some devices report a low dev_version but still support 5 timers, so the
+      // packet length is the reliable signal (mirrors the check in parse_timer_info).
+      this->detected_timer_count_ = (data_len >= sizeof(B2500PacketHeader) + sizeof(TimerInfoPacket)) ? 5 : 3;
       this->message_received(B2500_MSG_TIMER_INFO, timestamp);
       break;
     }
